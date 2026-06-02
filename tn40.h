@@ -197,7 +197,7 @@ enum PHY_LEDS_OP {
 struct bdx_device_descr {
 	short vid;
 	short pid;
-	short subdev;
+	u16 subdev;
 	short msi;
 	short ports;
 	short phya;

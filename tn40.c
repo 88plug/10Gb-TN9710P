@@ -143,7 +143,7 @@ static void bdx_rx_free_pages(struct bdx_priv *priv);
 static int bdx_suspend(struct device *dev);
 static int bdx_resume(struct device *dev);
 #endif
-/*#define USE_RSS */
+#define USE_RSS
 #if defined(USE_RSS)
 /* bdx_init_rss - Initialize RSS hash HW function.
  *
@@ -169,12 +169,17 @@ static int bdx_init_rss(struct bdx_priv *priv)
 
 	/* UPDATE THE HASH SECRET KEY */
 	seed = (uint32_t) (0xFFFFFFFF & jiffies);
-	prandom_seed(seed);
-	for (i = 0; i < 4 * RSS_HASH_LEN; i += 4) {
-		u32 rnd = prandom_u32();
-		WRITE_REG(priv, regRSS_HASH_BASE + 4 * i, rnd);
+	(void)seed;
+	for (i = 0; i < RSS_HASH_LEN; i += 4) {
+		u32 rnd = get_random_u32();
+		WRITE_REG(priv, regRSS_HASH_BASE + i, rnd);
 		pr_debug("bdx_init_rss() rnd 0x%x\n", rnd);
 	}
+
+	/* PROGRAM INDIRECTION TABLE: 256 entries, 2 queues, alternating */
+	for (i = 0; i < 256; i++)
+		WRITE_REG(priv, regRSS_INDT_BASE + i * 4, i & 1);
+
 	WRITE_REG(priv, regRSS_CNG,
 		  RSS_ENABLED | RSS_HFT_TOEPLITZ |
 		  RSS_HASH_IPV4 | RSS_HASH_TCP_IPV4 |
@@ -2506,15 +2511,20 @@ static int bdx_rx_receive(struct bdx_priv *priv, struct rxd_fifo *f, int budget)
 		bdx_rxdb_free_elem(db, rxdd->va_lo);
 		/* PROCESS PACKET */
 		bdx_rx_vlan(priv, skb, rxd_val1, rxd_vlan);
+#if defined(USE_RSS)
+		{
+			u32 rss_hash = CPU_CHIP_SWAP32(rxdd->rss_hash);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0)
+			skb_set_hash(skb, rss_hash, PKT_HASH_TYPE_L4);
+#else
+			skb->rxhash = rss_hash;
+#endif
+			pr_debug("rxhash    = 0x%x\n", rss_hash);
+		}
+#endif /* USE_RSS */
 		napi_gro_frags(&priv->napi);
 
 		bdx_rx_reuse_page(priv, dm);
-
-#if defined(USE_RSS)
-		skb->hash = CPU_CHIP_SWAP32(rxdd->rss_hash);
-		skb->l4_hash = 1;
-		pr_debug("rxhash    = 0x%x\n", skb->hash);
-#endif /* USE_RSS */
 		priv->net_stats.rx_bytes += len;
 
 		if (unlikely(++done >= budget)) {
@@ -4128,7 +4138,7 @@ static void bdx_ethtool_ops(struct net_device *netdev)
 		.get_drvinfo = bdx_get_drvinfo,
 		.get_link = ethtool_op_get_link,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 7, 0)
-		.supported_coalesce_params = ETHTOOL_COALESCE_USECS,
+		.supported_coalesce_params = ETHTOOL_COALESCE_USECS | ETHTOOL_COALESCE_MAX_FRAMES,
 #endif
 		.get_coalesce = bdx_get_coalesce,
 		.set_coalesce = bdx_set_coalesce,
