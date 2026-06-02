@@ -101,34 +101,34 @@ ifeq ($(RESUME),YES)
 	OPT_RESUME += -D_DRIVER_RESUME_
 endif
 ifdef OPT_RESUME
-	EXTRA_CFLAGS += $(OPT_RESUME)
+	ccflags-y += $(OPT_RESUME)
 	MAKE_MSG += resume supported
 endif
 ifeq ($(EEE), YES)
-	EXTRA_CFLAGS += -D_EEE_
+	ccflags-y += -D_EEE_
 endif
 #
-# No selected PHYs default to Jumbo driver
+# PHY selection: MV88X3310=YES always enabled for TN9710P (1fc9:4027)
+# Include all common PHYs so the module works with all board variants
 #
-ifndef OPT_PHYS
-	DRV_OBJS+= $(JUMBO_OBJS)
-	EXTRA_CFLAGS += $(JUMBO_PHYS)	
-else
-	EXTRA_CFLAGS += $(OPT_PHYS)	
-endif
+DRV_OBJS += MV88X3310_phy.o MV88X3310_phy_Linux.o \
+            QT2025_phy.o QT2025_phy_Linux.o \
+            TLK10232_phy.o TLK10232_phy_Linux.o \
+            AQR105_phy.o AQR105_phy_Linux.o
+ccflags-y += -DPHY_MV88X3310 -DPHY_QT2025 -DPHY_TLK10232 -DPHY_AQR105 -DPHY_MUSTANG
 #
 # Trace
 #         
 ifeq ($(TRACE),YES)
 	DRV_OBJS+= trace.o
-	EXTRA_CFLAGS += -D_TRACE_LOG_
+	ccflags-y += -D_TRACE_LOG_
 endif
 #
 # memLog
 #         
 ifeq ($(MEMLOG),YES)
 	DRV_OBJS+= memLog.o
-	EXTRA_CFLAGS += -DTN40_MEMLOG
+	ccflags-y += -DTN40_MEMLOG
 endif
 obj-m += $(DRV_NAME).o
 $(DRV_NAME)-objs := $(DRV_OBJS)
