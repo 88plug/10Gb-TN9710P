@@ -307,6 +307,7 @@ __init int MV88X3310_mdio_reset(struct bdx_priv *priv, int port,
 			expected_value +=
 			    (val & 0x00ff) + ((val & 0xff00) >> 8);
 			BDX_MDIO_WRITE(priv, 3, 0xD0F2, val);
+			if ((j & 0xFF) == 0) cond_resched();
 		}
 		pr_debug("%s loaded %d 16bit words\n", PHY_NAME,
 			 phy_initdata_size);

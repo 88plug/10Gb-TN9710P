@@ -347,6 +347,8 @@ u32 bdx_mdio_get(struct bdx_priv *priv)
 
 			return mdio_cmd_stat;
 		}
+		cpu_relax();
+		udelay(10);
 	}
 	pr_err("MDIO busy!\n");
 	return 0xFFFFFFFF;
@@ -455,8 +457,15 @@ int bdx_mdio_look_for_phy(struct bdx_priv *priv, int port)
 
 	phy_id = bdx_mdio_read(priv, 1, i, 0x0002);	/* PHY_ID_HIGH */
 	phy_id &= 0xFFFF;
+	/* If the very first read returns 0xFFFF the MDIO bus is not responding;
+	 * abort immediately instead of burning 32 × 10 ms scanning dead ports. */
+	if (phy_id == 0xFFFF) {
+		pr_err("MDIO bus not responding (0xFFFF), aborting PHY search\n");
+		return -1;
+	}
 	for (i = 0; i < 32; i++) {
 		msleep(10);
+		cond_resched();
 		pr_debug("LOOK FOR PHY: port=0x%x\n", i);
 		phy_id = bdx_mdio_read(priv, 1, i, 0x0002);	/* PHY_ID_HIGH */
 		phy_id &= 0xFFFF;
@@ -1360,7 +1369,7 @@ static int bdx_close(struct net_device *ndev)
 
 	priv = netdev_priv(ndev);
 	bdx_stop(priv);
-	LUXOR__NAPI_DISABLE(&priv->napi);
+	if (priv->state & BDX_STATE_OPEN) LUXOR__NAPI_DISABLE(&priv->napi);
 	priv->state &= ~BDX_STATE_OPEN;
 	return 0;
 
@@ -3508,7 +3517,10 @@ static int __init bdx_probe(struct pci_dev *pdev,
 
 	nic->port_num = bdx_get_ports_by_id(pdev->vendor, pdev->device);
 	print_hw_id(pdev);
-	bdx_hw_reset_direct(nic->regs);
+	if (bdx_hw_reset_direct(nic->regs)) {
+		pr_err("bdx_probe: HW PLL reset failed\n");
+		err = -EIO; goto err_out_iomap;
+	}
 
 	nic->irq_type = IRQ_INTX;
 #ifdef TN40_IRQ_MSI
@@ -3757,7 +3769,7 @@ bdx_get_drvinfo(struct net_device *netdev, struct ethtool_drvinfo *drvinfo)
 {
 	struct bdx_priv *priv = netdev_priv(netdev);
 
-	strlcpy(drvinfo->driver, BDX_DRV_NAME, sizeof(drvinfo->driver));
+	strscpy(drvinfo->driver, BDX_DRV_NAME, sizeof(drvinfo->driver));
 	strlcpy(drvinfo->version, BDX_DRV_VERSION, sizeof(drvinfo->version));
 	strlcpy(drvinfo->fw_version, "N/A", sizeof(drvinfo->fw_version));
 	strlcpy(drvinfo->bus_info, pci_name(priv->pdev),
