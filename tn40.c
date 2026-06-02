@@ -455,14 +455,8 @@ int bdx_mdio_look_for_phy(struct bdx_priv *priv, int port)
 	i = port;
 	setMDIOSpeed(priv, MDIO_SPEED_1MHZ);
 
-	phy_id = bdx_mdio_read(priv, 1, i, 0x0002);	/* PHY_ID_HIGH */
-	phy_id &= 0xFFFF;
-	/* If the very first read returns 0xFFFF the MDIO bus is not responding;
-	 * abort immediately instead of burning 32 × 10 ms scanning dead ports. */
-	if (phy_id == 0xFFFF) {
-		pr_err("MDIO bus not responding (0xFFFF), aborting PHY search\n");
-		return -1;
-	}
+	/* Drop the pre-scan probe — MV88X3310 lives on port 0, not the caller-
+	 * supplied port.  Let the loop scan all 32 addresses before giving up. */
 	for (i = 0; i < 32; i++) {
 		msleep(10);
 		cond_resched();
